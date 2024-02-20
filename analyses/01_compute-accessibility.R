@@ -2,7 +2,7 @@
 ################ COMPUTE ACCESSIBILITY AT THE SETTLEMENT LEVEL #################
 ################################################################################
 
-pacman::p_load(osmdata, dplyr, data.table, sf, crsuggest, ggplot2)
+pacman::p_load(osmdata, dplyr, data.table, sf, crsuggest, ggplot2, sfnetworks)
 
 #### read in the settlement interesection with adm3 data with adjusted population
 stl_dt <- readRDS("data-raw/stladm_int_popadj.RDS")

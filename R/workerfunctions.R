@@ -113,6 +113,12 @@ create_query_bbox <- function(shp_dt = NULL,
 
       bbox_obj <- st_transform(st_as_sfc(st_bbox(shp_dt)),
                                crs = as.numeric(suggest_dt$crs_code[1]))
+    } else {
+
+      bbox_obj <- st_transform(st_as_sfc(st_bbox(shp_dt)),
+                               crs = osm_crs)
+
+
     }
 
     bbox_obj <- sf::st_bbox(bbox_obj)
@@ -175,20 +181,93 @@ create_query_bbox <- function(shp_dt = NULL,
 clean_osmlines <- function(streets_obj){
 
   ### closed road is treated as a polygon so first convert to lines
-  if (is.null(streets_obj$osm_polygons) == FALSE){
+  if (!is.null(streets_obj$osm_polygons)){
 
     closed_dt <- sf::st_cast(streets_obj$osm_polygons, "LINESTRING")
 
     closed_dt <- closed_dt[, c("osm_id", "highway", "surface", "geometry")]
 
+    streets_obj$osm_lines <- rbind(streets_obj$osm_lines,
+                                   streets_obj$osm_polygons)
+
   }
 
-  if (is.null(streets_obj$osm_polygons) == FALSE){
+  if (!is.null(streets_obj$osm_multipolygons)){
 
     add_dt <- sf::st_cast(streets_obj$osm_multipolygons, "LINESTRING")
 
     add_dt <- add_dt[, c("osm_id", "highway", "surface", "geometry")]
+
+    streets_obj$osm_lines <- rbind(streets_obj$osm_lines,
+                                   streets_obj$osm_multipolygons)
+
   }
+
+  lines_dt <- streets_obj$osm_lines
+
+  ### creating an sf network object
+  lines_dt <- as_sfnetwork(lines_dt,
+                           directed = F,
+                           length_as_weight = T)
+
+  ### simplifying the data
+  lines_dt <-
+    lines_dt %>%
+    activate("edges") %>%
+    arrange(edge_length()) %>%
+    filter(!edge_is_multiple()) %>%
+    filter(!edge_is_loop())
+
+  subdivision_obj <- convert(lines_dt,
+                             to_spatial_subdivision)
+
+  ### indicating what to do when the smoothing of pseudo nodes takes place.
+  ### i.e. taking the mean of the adjusted speed when two linestrings are put together
+
+  attributes  = list(
+    adjusted_speed = "mean",
+    highway = function(x) if (length(unique(x)) == 1) x[1] else "unknown",
+    "ignore"
+  ) ### I don't understand this code
+
+  ###
+  smoothed_obj <- convert(subdivision_obj,
+                          to_spatial_smooth,
+                          summarise_attributes = attributes)
+
+  smoothed_sf <-
+    smoothed_obj %>%
+    activate("edges") %>%
+    st_as_sf()
+
+  smoothed_sf[is.na(smoothed_sf$adjusted_speed), ]
+
+  ### simplify intersections
+  node_coord_obj <-
+    smoothed_sf %>%
+    activate("nodes") %>%
+    st_coordinates()
+
+
+  clusters <- dbscan(node_coord_obj,
+                     eps = 50,
+                     minPts = 1)$cluster
+
+  clustered <-
+    smoothed_obj %>%
+    activate("nodes") %>%
+    mutate(cls = clusters)
+
+
+  clustered <- clustered %>%
+    mutate(cmp = group_components())
+
+
+  contracted <- convert(clustered,
+                        to_spatial_contracted,
+                        cls, cmp,
+                        simplify = TRUE)
+
 
 
 
