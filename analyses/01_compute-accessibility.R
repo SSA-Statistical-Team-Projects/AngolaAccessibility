@@ -2,7 +2,8 @@
 ################ COMPUTE ACCESSIBILITY AT THE SETTLEMENT LEVEL #################
 ################################################################################
 
-pacman::p_load(osmdata, dplyr, data.table, sf, crsuggest, ggplot2, sfnetworks)
+pacman::p_load(osmdata, dplyr, data.table, sf, crsuggest, ggplot2,
+               sfnetworks, tidygraph, dbscan, accessibility)
 
 #### read in the settlement interesection with adm3 data with adjusted population
 stl_dt <- readRDS("data-raw/stladm_int_popadj.RDS")
@@ -42,21 +43,58 @@ saveRDS(osmstreets_obj, "data-raw/osm_raw/osmroads_object.RDS")
 
 
 #### create speed dictionary
-speed_dt <- data.frame(highway = c("trunk","secondary","tertiary", "residential",
-                                   "unclassified","primary","trunk_link", "secondary_link",
-                                   "primary_link","tertiary_link", "road"),
-                       speed = c(90, 60, 55, 40, 50, 70, 70, 55, 60, 45, 50))
+highway_type <- unique(osmstreets_obj$osm_lines$highway[!is.na(osmstreets_obj$osm_lines$highway)])
 
-speedadj_dt <- data.frame(surface = c("asphalt", "unpaved", "concrete","cobblestone:flattened",
-                                      "dirt/sand", "dirt", "paved", "sett", "ground",
-                                      "gravel" ,  "cobblestone", "paving_stones",
-                                      "compacted", "sand", "unhewn_cobblestone",
-                                      "earth", "grass" , "unspecified" , "mud" ,
-                                      "dust" ,  "wood", "concrete:plates",
-                                      "concrete:lanes", "unpaved;dirt/sand"),
-                          div_speed_by = c(1.00, 1.30, 1.10, 1.30, 1.30, 1.10, 1.10, 1.30,
-                                           1.30, 1.30, 1.30, 1.30, 1.00, 1.30, 1.30, 1.30,
-                                           1.30, 1.00, 1.30, 1.30, 1.30, 1.00, 1.00, 1.30))
+speed_dt <- data.frame(highway = highway_type,
+                       speed = c(90, 70, 60, 55, 40, 50, 55,
+                                 70, 60, 45, 50, 80, 90))
+
+### quickly clean surface data
+osmstreets_obj$osm_lines$surface[grepl(pattern = "asphaltFresh_",
+                                       x = osmstreets_obj$osm_lines$surface)] <-
+  "asphalt"
+
+osmstreets_obj$osm_lines$surface[grepl(pattern = "groundRzeka_",
+                                       x = osmstreets_obj$osm_lines$surface)] <-
+  "ground"
+
+osmstreets_obj$osm_lines$surface[grepl(pattern = "unpaved; ground",
+                                       x = osmstreets_obj$osm_lines$surface)] <-
+  "unpaved"
+
+osmstreets_obj$osm_lines$surface[osmstreets_obj$osm_lines$surface %in%
+                                   c(3, "add name", "d",
+                                     "d7", "dd", "JOG")] <-
+  NA
+
+osmstreets_obj$osm_lines$surface[grepl(pattern = "fine_gravel",
+                                       x = osmstreets_obj$osm_lines$surface)] <-
+  "gravel"
+
+surface_type <- unique(osmstreets_obj$osm_lines$surface[!is.na(osmstreets_obj$osm_lines$surface)])
+surfadj_dt <- data.frame(surface = surface_type,
+                         div_speed_by = c(1, 1.3, 1.1, 1.1, 1, 1.1, 1.3, 1.3, 1.3, 1.3, 1.3,
+                                          1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.5, 1.3))
+
+network_dt <- clean_osmlines(streets_obj = osmstreets_obj,
+                             speed_dt = speed_dt,
+                             surfadj_dt = surfadj_dt)
+
+### save the clean network data
+saveRDS(network_dt, "data-clean/clean_roadnetwork.RDS")
+
+
+### compute the distance to the nearest marketplace metrics
+
+
+
+
+
+
+
+
+
+
 
 
 
