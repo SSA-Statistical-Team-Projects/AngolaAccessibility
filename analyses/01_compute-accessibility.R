@@ -5,6 +5,7 @@
 pacman::p_load(osmdata, dplyr, data.table, sf, crsuggest, ggplot2,
                sfnetworks, tidygraph, dbscan, accessibility)
 
+sf::sf_use_s2(FALSE)
 #### read in the settlement interesection with adm3 data with adjusted population
 stl_dt <- readRDS("data-raw/stladm_int_popadj.RDS")
 
@@ -85,15 +86,83 @@ saveRDS(network_dt, "data-clean/clean_roadnetwork.RDS")
 
 
 ### compute the distance to the nearest marketplace metrics
+marketplace_dt <-
+  osmamenities_obj$osm_points %>%
+  filter(amenity %in% "marketplace") %>%
+  select(c(osm_id, geometry))
+
+
+### split the origins_dt into multiple parts
+split_dt <-
+  stl_dt[, c("settlement_id")] %>%
+  st_centroid() %>%
+  split(1:20)
+
+
+### blend origin and destination data to the network object
+centroid_dt <-
+  split_dt %>%
+  Reduce(f = "rbind")
+
+### create blended network object now so that we don't have to do it multiple times
+network_dt <-
+  network_dt %>%
+  as_sfnetwork(directed = FALSE,
+               length_as_weight = TRUE)
+
+blend_obj <- st_network_blend(network_dt,
+                              centroid_dt)
+
+blend_obj <- st_network_blend(blend_obj,
+                              marketplace_dt)
+
+saveRDS(blend_obj, "data-clean/blend_obj.RDS")
+
+
+network_dt <-
+  network_dt %>%
+  activate("edges") %>%
+  mutate(adj_speed = ifelse(is.na(time), 41.10, adj_speed)) %>%
+  mutate(adj_speed = adj_speed * units::as_units("km/h")) %>%
+  mutate(time = weight / adj_speed)
+
+blend_obj <-
+  blend_obj %>%
+  activate("edges") %>%
+  mutate(adj_speed = ifelse(is.na(time), 41.10, adj_speed)) %>%
+  mutate(adj_speed = adj_speed * units::as_units("km/h")) %>%
+  mutate(time = weight / adj_speed)
+
+dt <- lapply(split_dt,
+             function(x){
+
+
+               y <- parallel_compnetaccess(cpus = 16,
+                                           parallel_mode = "socket",
+                                           lines_obj = network_dt,
+                                           origins_dt = x,
+                                           dest_dt = marketplace_dt,
+                                           blend_obj = blend_obj,
+                                           blend_dsn = NULL)
+
+               saveRDS(y,
+                       paste0("data-clean/marketplace/ttm_",
+                              gsub("[-: ]", "_", as.character(Sys.time())),
+                              "_batch.rds"))
+
+               print("estimation split complete")
+
+               return(y)
+
+             })
 
 
 
+#### check the location of the marketplaces
 
-
-
-
-
-
+ggplot() +
+  geom_sf(data = shp_dt) +
+  geom_sf(data = marketplace_dt)
 
 
 
