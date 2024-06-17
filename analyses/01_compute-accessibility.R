@@ -110,13 +110,13 @@ network_dt <-
   as_sfnetwork(directed = FALSE,
                length_as_weight = TRUE)
 
-# blend_obj <- st_network_blend(network_dt,
-#                               centroid_dt)
-#
-# blend_obj <- st_network_blend(blend_obj,
-#                               marketplace_dt)
-#
-# saveRDS(blend_obj, "data-clean/blend_obj.RDS")
+blend_obj <- st_network_blend(network_dt,
+                              centroid_dt)
+
+blend_obj <- st_network_blend(blend_obj,
+                              marketplace_dt)
+
+saveRDS(blend_obj, "data-clean/blend_obj.RDS")
 
 
 network_dt <-
@@ -126,28 +126,26 @@ network_dt <-
   mutate(adj_speed = adj_speed * units::as_units("km/h")) %>%
   mutate(time = weight / adj_speed)
 
-# blend_obj <-
-#   blend_obj %>%
-#   activate("edges") %>%
-#   mutate(adj_speed = ifelse(is.na(time), 41.10, adj_speed)) %>%
-#   mutate(adj_speed = adj_speed * units::as_units("km/h")) %>%
-#   mutate(time = weight / adj_speed)
+blend_obj <-
+  blend_obj %>%
+  activate("edges") %>%
+  mutate(adj_speed = ifelse(is.na(time), 41.10, adj_speed)) %>%
+  mutate(adj_speed = adj_speed * units::as_units("km/h")) %>%
+  mutate(time = weight / adj_speed)
 
-network_dt <-
-  network_dt %>%
-  activate("nodes") %>%
-  filter(group_components() == 1)
+#### increase memory allocation
 
-#### compute minimum network cost using the unblended data
+
+
 dt <- lapply(split_dt,
              function(x){
 
 
-               y <- parallel_compnetaccess(cpus = 15,
+               y <- parallel_compnetaccess(cpus = 20,
                                            lines_obj = network_dt,
                                            origins_dt = x,
                                            dest_dt = marketplace_dt,
-                                           blend_obj = network_dt,
+                                           blend_obj = blend_obj,
                                            blend_dsn = NULL)
 
                saveRDS(y,
@@ -163,20 +161,12 @@ dt <- lapply(split_dt,
 
 save(dt, "data-clean/marketplace/time_to_markets_obj.RDS")
 
-### quickly plot the results
-shp_dt <- sf::st_read(dsn = "data-raw/microdata/ago_shape",
-                      layer = "ago_admbnda_adm2_gadm_ine_ocha_20180904")
 
+#### check the location of the marketplaces
 
-dt %>%
-  ggplot() +
+ggplot() +
   geom_sf(data = shp_dt) +
-  geom_sf(aes(color = cost)) +
-  labs(title = "Access to Markets & Financial Services",
-       color = "Time To Nearest Market, \n Bank or ATM (in Hrs)") +
-  scale_color_viridis_c(direction = -1) +
-  theme_void() +
-  theme_bw()
+  geom_sf(data = marketplace_dt)
 
 
 

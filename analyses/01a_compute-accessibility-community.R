@@ -4,7 +4,7 @@
 
 pacman::p_load(osmdata, dplyr, data.table, sf, crsuggest, ggplot2,
                sfnetworks, tidygraph, dbscan, accessibility,
-               doParallel, foreach)
+               doParallel, foreach, viridis)
 
 #### write the cleaned network data into pbf format
 network_dt <- readRDS("data-clean/clean_roadnetwork.RDS")
@@ -63,15 +63,24 @@ dt <- parallel_compnetaccess(cpus = 15,
 saveRDS(dt, "data-clean/marketplace/village_market_access.RDS")
 
 
+##### plots for the analytics
+angshp_dt <- sf::st_read(dsn = "data-raw/boundary",
+                         layer = "ago_admbnda_adm3_gadm_ine_ocha_20180904")
+
+accessplot <-
+dt %>%
+ggplot() +
+  geom_sf(data = angshp_dt, fill = "white") +
+  geom_sf(aes(color = cost)) +
+  labs(title = "Market Access from Villages in Angola",
+       color = "Travel Time (hrs)") +
+  scale_color_viridis(option = "plasma") +
+  theme_bw()
 
 
+ggsave(accessplot, filename = "figures/marketaccess_plot.png")
 
-
-
-
-
-
-
+save.image("data-raw/angola_access_projenvir.RData")
 
 
 

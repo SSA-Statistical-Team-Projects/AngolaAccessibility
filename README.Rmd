@@ -1,0 +1,43 @@
+---
+output: github_document
+---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "man/figures/README-",
+  out.width = "100%"
+)
+
+pacman::p_load(here)
+
+load(here("data-raw/angola_access_projenvir.RData"))
+
+```
+
+# Measuring Market Access of the Villages in Angola
+
+- Introduction
+
+- The Data
+
+Combining administrative data with geospatial data from open street maps. 
+Describe the data
+Show plots of the road network, location of the villages and the location of the markets and ATMs within the country
+
+- Results
+
+```{r, echo = FALSE}
+
+accessplot
+
+```
+
+
+
+
+
+
