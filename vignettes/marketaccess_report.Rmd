@@ -1,9 +1,9 @@
 ---
-output: github_document
-always_allow_html: true
+title: "Market Access in Angola"
+author: "Ifeanyi Edochie"
+date: "2024-06-20"
+output: html_document
 ---
-
-<!-- README.md is generated from README.Rmd. Please edit that file -->
 
 ```{r, include = FALSE}
 knitr::opts_chunk$set(
@@ -88,12 +88,18 @@ Note: The map shows community locations (in blue) and markets-financial services
 
 - Due to a large number of missing speed limits within the road segment data, we create a speed dictionary assigning an expected speed to each type of road. We apply adjustments for the surface quality of each road. 
 
-$$v_{rtq} = E(v_t)*\lambda_s$$
+$$
 
+v_{rtq} = E(v_t)*\lambda_s    
+
+$$
 where \( E(v_t) \) represents the speed for each road type and \( \lambda_s \) is the adjustment factor for the surface types i.e. surfaces that are rougher and make roads less suited for traffic should reduce \( v\) for a road \( r\). We can now compute travel times for each road segment, \( r\), as follows: 
 
-$$\pi_{r} = \frac{D_{r}} {v_{rtq}}$$
+$$
 
+\pi_{r} = \frac{D_{r}} {v_{rtq}}    
+
+$$
 i.e.  The length of a road (distance) \(D_{r}\) is a product of travel time \( pi_{r}\) and the expected speed of travel \( v_{rtq}\).
 
 - We make structural adjustments to the road geometries obtained from OSM to create a more realistic picture. These changes include deleting redundant edges and loops, assuming all roads to be bi-directional and we snap edges i.e. any two road edges ends within 30m of each other are snapped into one road. This is because OSM roads are often inputted manually and two roads that form a junction might not be properly mapped living a space between two edges. Leaving this unconnected, creates origins and destinations that seem unconnected or increase the expected distance/time to destination. 
@@ -197,6 +203,4 @@ adjustment_dt %>%
 
 
 ```
-
-
 
