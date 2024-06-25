@@ -4,7 +4,7 @@
 
 pacman::p_load(osmdata, dplyr, data.table, sf, crsuggest, ggplot2,
                sfnetworks, tidygraph, dbscan, accessibility,
-               doParallel, foreach)
+               doParallel, foreach, haven)
 
 sf::sf_use_s2(FALSE)
 #### read in the settlement interesection with adm3 data with adjusted population
@@ -77,6 +77,10 @@ surfadj_dt <- data.frame(surface = surface_type,
                          div_speed_by = c(1, 1.3, 1.1, 1.1, 1, 1.1, 1.3, 1.3, 1.3, 1.3, 1.3,
                                           1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.5, 1.3))
 
+### read in the district centers data
+centers_dt <- readRDS("data-clean/marketplace/district_centers.RDS")
+
+
 network_dt <- clean_osmlines(streets_obj = osmstreets_obj,
                              speed_dt = speed_dt,
                              surfadj_dt = surfadj_dt)
@@ -88,21 +92,47 @@ saveRDS(network_dt, "data-clean/clean_roadnetwork.RDS")
 ### compute the distance to the nearest marketplace metrics
 marketplace_dt <-
   osmamenities_obj$osm_points %>%
-  filter(amenity %in% "marketplace") %>%
+  filter(amenity %in% c("marketplace", "atm", "bank")) %>%
   select(c(osm_id, geometry))
 
+market_count <- nrow(marketplace_dt) + 1
 
-### split the origins_dt into multiple parts
-split_dt <-
-  stl_dt[, c("settlement_id")] %>%
-  st_centroid() %>%
-  split(1:20)
+end_count <- nrow(centers_dt)
 
+marketplace_dt <-
+  marketplace_dt %>%
+  select(geometry) %>%
+  rbind(centers_dt %>%
+          select(geometry)) %>%
+  mutate(id = 1:nrow(.))
 
-### blend origin and destination data to the network object
-centroid_dt <-
-  split_dt %>%
-  Reduce(f = "rbind")
+saveRDS(marketplace_dt, "data-clean/marketplace/district_centers_marketplaces.RDS")
+
+# ### split the origins_dt into multiple parts
+# split_dt <-
+#   stl_dt[, c("settlement_id")] %>%
+#   st_centroid() %>%
+#   split(1:20)
+#
+#
+# ### blend origin and destination data to the network object
+# centroid_dt <-
+#   split_dt %>%
+#   Reduce(f = "rbind")
+
+### read in the communities which will be the origins
+community_dt <- readstata13::read.dta13("data-raw/microdata/Comunitario_Final.dta")
+
+community_dt <-
+  community_dt %>%
+  mutate(S3_01__Latitude = as.numeric(as.character(S3_01__Latitude))) %>%
+  mutate(S3_01__Longitude = as.numeric(as.character(S3_01__Longitude))) %>%
+  select(c("interview__id", "interview__key", "S1_01", "S1_02", "S1_03",
+           "S1_04a", "S1_05", "S3_01__Longitude", "S3_01__Latitude")) %>%
+  filter(!is.na(S3_01__Longitude) & !is.na(S3_01__Latitude)) %>%
+  st_as_sf(crs = 4326,
+           agr = "constant",
+           coords = c("S3_01__Longitude", "S3_01__Latitude"))
 
 ### create blended network object now so that we don't have to do it multiple times
 network_dt <-
@@ -111,7 +141,8 @@ network_dt <-
                length_as_weight = TRUE)
 
 blend_obj <- st_network_blend(network_dt,
-                              centroid_dt)
+                              community_dt[, c("interview__id",
+                                               "geometry")])
 
 blend_obj <- st_network_blend(blend_obj,
                               marketplace_dt)
@@ -133,40 +164,43 @@ blend_obj <-
   mutate(adj_speed = adj_speed * units::as_units("km/h")) %>%
   mutate(time = weight / adj_speed)
 
-#### increase memory allocation
+dt2 <- parallel_compnetaccess(cpus = 15,
+                             lines_obj = network_dt,
+                             origins_dt = community_dt[, c("interview__id")],
+                             dest_dt = marketplace_dt,
+                             blend_obj = network_dt)
+
+saveRDS(dt2, "data-clean/marketplace/village_market_access2.RDS")
+
+save.image("data-raw/angola_access_projenvir2.RData")
+
+# #### increase memory allocation
+#
+# dt <- lapply(split_dt,
+#              function(x){
+#
+#
+#                y <- parallel_compnetaccess(cpus = 20,
+#                                            lines_obj = network_dt,
+#                                            origins_dt = x,
+#                                            dest_dt = marketplace_dt,
+#                                            blend_obj = blend_obj,
+#                                            blend_dsn = NULL)
+#
+#                saveRDS(y,
+#                        paste0("data-clean/marketplace/ttm_",
+#                               gsub("[-: ]", "_", as.character(Sys.time())),
+#                               "_batch.rds"))
+#
+#                print("estimation split complete")
+#
+#                return(y)
+#
+#              })
+#
+# save(dt, "data-clean/marketplace/time_to_markets_obj.RDS")
 
 
-
-dt <- lapply(split_dt,
-             function(x){
-
-
-               y <- parallel_compnetaccess(cpus = 20,
-                                           lines_obj = network_dt,
-                                           origins_dt = x,
-                                           dest_dt = marketplace_dt,
-                                           blend_obj = blend_obj,
-                                           blend_dsn = NULL)
-
-               saveRDS(y,
-                       paste0("data-clean/marketplace/ttm_",
-                              gsub("[-: ]", "_", as.character(Sys.time())),
-                              "_batch.rds"))
-
-               print("estimation split complete")
-
-               return(y)
-
-             })
-
-save(dt, "data-clean/marketplace/time_to_markets_obj.RDS")
-
-
-#### check the location of the marketplaces
-
-ggplot() +
-  geom_sf(data = shp_dt) +
-  geom_sf(data = marketplace_dt)
 
 
 

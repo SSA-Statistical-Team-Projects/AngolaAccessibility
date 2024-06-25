@@ -2,21 +2,18 @@
 title: "Market Access in Angola"
 author: "Ifeanyi Edochie"
 date: "2024-06-20"
-output: html_document
+output: word_document
+always_allow_html: true
+bibliography: bibliography.bib
 ---
 
 ```{r, include = FALSE}
-knitr::opts_chunk$set(
-  collapse = TRUE,
-  comment = "#>",
-  fig.path = "man/figures/README-",
-  out.width = "100%"
-)
-devtools::load_all()
 
-# BiocManager::install("kable", update = FALSE, validate = FALSE)
+knitr::opts_chunk$set(echo = TRUE)
 
-pacman::p_load(here, ggplot2, sf, sfnetworks, kableExtra, dplyr, data.table)
+pacman::p_load(here, ggplot2, sf, sfnetworks, 
+               kableExtra, dplyr, data.table, 
+               flextable)
 
 sf::sf_use_s2(FALSE)
 
@@ -28,27 +25,28 @@ load(here("data-raw/angola_access_projenvir.RData"))
 
 ### Introduction
 
-An important goal of development in areas of transportation and land use policy is improving the accessibility of the poor to basic services. Angola is a country with 35.9 million people spread over a vast area of nearly half a million square kilometers. The country is one of the largest within the continent and a significant proportion of its people live in remote areas. In addition, the transportation infrastructure within the country which makes reaching those in need to provide access to services remains a development challenge. Consequently, a significant proportion of rural communities have no markets or financial services which makes participation in the economy more difficult particularly for the poor. 
+An important goal of development in areas of transportation and land use policy is improving the accessibility of the poor to basic services. Angola is a country with 35.9 million people [@wdi] spread over a vast area of nearly half a million square kilometers. The country is one of the largest within the continent and a significant proportion of its people live in remote areas. In addition, the transportation infrastructure within the country which makes reaching those in need to provide access to services remains a development challenge. Consequently, a significant proportion of rural communities have no markets or financial services which makes participation in the economy more difficult particularly for the poor.
 
-In this study, we apply data from open street maps (OSM) on the available road infrastructure and the locations of all markets and financial services within Angola. We use this to measure the expected travel times from each village community within the country to markets and financial services. This allows us to answer the following questions: 
+In this study, we apply data from open street maps (OSM) [@OpenStreetMap] on the available road infrastructure and the locations of all markets and financial services within Angola. We use this to measure the expected travel times from each village community within the country to markets and financial services. This allows us to answer the following questions:
 
-
-- What is the spatial distribution of markets and financial services within the country?
-- What is the spatial allocation of roads within the country?
-- How accessible is each village community from their nearest market/financial service? 
+-   What is the spatial distribution of markets and financial services within the country?
+-   What is the spatial allocation of roads within the country?
+-   How accessible is each village community from their nearest market/financial service?
 
 ### The Methodology & Data
 
-In measuring the expected length of time it takes each village community to arrive at the nearest market or financial service, we combine the community geolocation data from the 2018 census with the road network map and the location of all markets and financial services within the country. Specifically, we apply the following steps: 
+In measuring the expected length of time it takes each village community to arrive at the nearest market or financial service, we combine the community geolocation data from the 2018 census with the road network map and the location of all markets and financial services within the country. Specifically, we apply the following steps:
 
-(1) We obtain and clean the community geolocated data to ensure each location is within the country and remove all incorrectly geocoded communities. 
+(1) We obtain and clean the community geolocated data to ensure each location is within the country and remove all incorrectly geocoded communities.
 
-The locations of the 23088 geolocated communities spread across the country as follow: 
-```{r, echo=FALSE}
+The locations of the 23088 geolocated communities spread across the country as follow:
+
+```{r, echo=FALSE, message=FALSE}
 
 ### read in the raster
 agoshp_dt <- sf::st_read(dsn = here("data-raw/settlements"),
-                         layer = "Angola_Settlement_Extents_Version_02")
+                         layer = "Angola_Settlement_Extents_Version_02",
+                         quiet = TRUE)
 
 community_dt <- st_join(community_dt, agoshp_dt[, c("dou_level1")])
 
@@ -61,17 +59,14 @@ community_dt <-
 
 ggplot() + 
   geom_sf(data = angshp_dt) + 
-  geom_sf(data = community_dt, aes(color = sector)) + 
+  geom_sf(data = community_dt) + 
   theme_minimal()
 
 ```
 
+(2) We create a query box within which the locations of all markets, ATMs and Banks as well as the road network map will be return from the Open Street Map server. The query box is based on the geospatial extent of the country i.e. the maximum and minimum coordinate values intersecting the country in a square shape. Angola shares a border with Zambia to the East, Namibia to the South and the Democratic Republic of Congo (DRC) to the North. Like many other countries, individuals and families living close to the border in Angola are able to skip across to satisfy their needs without recourse to any disallowing border policies. Consequently, we add an additional 50km (upon expert advice) to the border to query box previous described to account for access to services in the neighboring countries.
 
-
-(2) We create a query box within which the locations of all markets, ATMs and Banks as well as the road network map will be return from the Open Street Map server. The query box is based on the geospatial extent of the country i.e. the maximum and minimum coordinate values intersecting the country in a square shape. 
-Angola shares a border with Zambia to the East, Namibia to the South and the Democratic Republic of Congo (DRC) to the North. Like many other countries, individuals and families living close to the border in Angola are able to skip across to satisfy their needs without recourse to any disallowing border policies. Consequently, we add an additional 50km (upon expert advice) to the border to query box previous described to account for access to services in the neighboring countries. 
-
-We apply an OSM database GET query to extract locations of all markets, ATMs and Banks within Angola based on the aforementioned query paremeters. There are 1156 geolocations returned from the GET request. 
+We apply an OSM database GET query to extract locations of all markets, ATMs and Banks within Angola based on the aforementioned query paremeters. There are 1156 geolocations returned from the GET request.
 
 ```{r, echo = FALSE}
 
@@ -82,27 +77,22 @@ ggplot() +
   theme_minimal() 
 
 ```
+
 Note: The map shows community locations (in blue) and markets-financial services (in red)
 
-(3) Likewise, we use the same query system to extract the road network system data within the country. We filter for the lines or multi-lines data with the following classifications: "motorway", "primary", "secondary", "tertiary", "unclassified", "residential", "trunk", "road",  "motorway_link","trunk_link", "primary_link", "secondary_link", "tertiary_link". We apply a cleaning process to the road network lines data performing the following operations: 
+(3) Likewise, we use the same query system to extract the road network system data within the country. We filter for the lines or multi-lines data with the following classifications: "motorway", "primary", "secondary", "tertiary", "unclassified", "residential", "trunk", "road", "motorway_link","trunk_link", "primary_link", "secondary_link", "tertiary_link". We apply a cleaning process to the road network lines data performing the following operations:
 
-- Due to a large number of missing speed limits within the road segment data, we create a speed dictionary assigning an expected speed to each type of road. We apply adjustments for the surface quality of each road. 
+-   Due to a large number of missing speed limits within the road segment data, we create a speed dictionary assigning an expected speed to each type of road. We apply adjustments for the surface quality of each road.
 
-$$
+$$v_{rtq} = E(v_t)*\lambda_s$$
 
-v_{rtq} = E(v_t)*\lambda_s    
+where $E(v_t)$ represents the speed for each road type and $\lambda_s$ is the adjustment factor for the surface types i.e. surfaces that are rougher and make roads less suited for traffic should reduce $v$ for a road $r$. We can now compute travel times for each road segment, $r$, as follows:
 
-$$
-where \( E(v_t) \) represents the speed for each road type and \( \lambda_s \) is the adjustment factor for the surface types i.e. surfaces that are rougher and make roads less suited for traffic should reduce \( v\) for a road \( r\). We can now compute travel times for each road segment, \( r\), as follows: 
+$$\pi_{r} = \frac{D_{r}} {v_{rtq}}$$
 
-$$
+i.e. The length of a road (distance) $D_{r}$ is a product of travel time $pi_{r}$ and the expected speed of travel $v_{rtq}$.
 
-\pi_{r} = \frac{D_{r}} {v_{rtq}}    
-
-$$
-i.e.  The length of a road (distance) \(D_{r}\) is a product of travel time \( pi_{r}\) and the expected speed of travel \( v_{rtq}\).
-
-- We make structural adjustments to the road geometries obtained from OSM to create a more realistic picture. These changes include deleting redundant edges and loops, assuming all roads to be bi-directional and we snap edges i.e. any two road edges ends within 30m of each other are snapped into one road. This is because OSM roads are often inputted manually and two roads that form a junction might not be properly mapped living a space between two edges. Leaving this unconnected, creates origins and destinations that seem unconnected or increase the expected distance/time to destination. 
+-   We make structural adjustments to the road geometries obtained from OSM to create a more realistic picture. These changes include deleting redundant edges and loops, assuming all roads to be bi-directional and we snap edges i.e. any two road edges ends within 30m of each other are snapped into one road. This is because OSM roads are often inputted manually and two roads that form a junction might not be properly mapped living a space between two edges. Leaving this unconnected, creates origins and destinations that seem unconnected or increase the expected distance/time to destination. We used the accessibility [@access] and tidyR [@tidyr] R packages to make these changes.
 
 ```{r, echo = FALSE}
 
@@ -115,16 +105,11 @@ ggplot() +
 
 ```
 
-
-
-(4) Next, we blend origins (community locations), road network and destinations (markets and financial services). This allows us to create origin-destination cost matrices i.e. estimate the travel times from each community location to all destinations. Select, the minimum travel time for each community location as the expected travel time for each community to their nearest destination. 
-
-
-
+(4) Next, we blend origins (community locations), road network and destinations (markets and financial services). This allows us to create origin-destination cost matrices i.e. estimate the travel times from each community location to all destinations. Select, the minimum travel time for each community location as the expected travel time for each community to their nearest destination.
 
 ### Estimation Results
-Below is a map of the spatial distribution of access to markets and financial services within the country. 
 
+Below is a map of the spatial distribution of access to markets and financial services within the country.
 
 ```{r, echo = FALSE}
 
@@ -132,8 +117,7 @@ accessplot
 
 ```
 
-
-This analysis contains two major flaws. Firstly, our travel times assume that all households have an equal means of transport. While flawed, this has the advantage of allowing us to focus on how long it would take a household to arrive at its nearest market or financial service of interest while keeping all other factors constant. Finally (and perhaps more importantly), the open street maps database can be incomplete in remote areas. 
+This analysis contains two major flaws. Firstly, our travel times assume that all households have an equal means of transport. While flawed, this has the advantage of allowing us to focus on how long it would take a household to arrive at its nearest market or financial service of interest while keeping all other factors constant. Finally (and perhaps more importantly), the open street maps database can be incomplete in remote areas.
 
 ```{r, echo = FALSE}
 
@@ -158,11 +142,11 @@ access_dt %>%
 
 ```
 
-
 ### Appendix
 
 #### Speed Dictionary
-```{r, echo = FALSE}
+
+```{r, echo = FALSE, results='asis'}
 
 ### read in the streets data
 osmstreets_obj <- readRDS(here("data-raw/osm_raw/osmroads_object.RDS"))
@@ -180,13 +164,21 @@ osmstreets_obj$osm_lines %>%
 
 
 
+# speed_dt %>%
+#   kbl(col.names = c("Highway Type", "(%) by Type", "Speed (km/hr)")) %>%
+#   kable_styling(full_width = F)
+
 speed_dt %>%
-  kbl(col.names = c("Highway Type", "(%) by Type", "Speed (km/hr)")) %>%
-  kable_styling(full_width = F)
+  flextable() %>%
+  set_header_labels(`Highway Type` = "highway", 
+                    `(%) by Type` = "percent", 
+                    `Speed (km/hr)` = "speed") %>%
+  autofit()
 
 ```
 
 #### Road Surface Adjustments
+
 ```{r, echo = FALSE}
 
 #### including the road adjustment factors table
@@ -198,9 +190,12 @@ adjustment_dt <-
 
 adjustment_dt %>%
   .[, adjust_factor := round(adjust_factor, digits = 2)] %>%
-  kbl(col.names = c("surface type", "adjustment factor")) %>%
-  kable_styling(full_width = F)
+  flextable() %>%
+  set_header_labels(surf_type = "surface type",
+                    adjust_factor = "adjustment factor") %>%
+  autofit()
 
 
 ```
 
+References
