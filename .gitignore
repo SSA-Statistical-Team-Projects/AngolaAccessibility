@@ -5,3 +5,4 @@
 .DS_Store
 .quarto
 data-raw/
+data-clean/blend_obj.RDS
