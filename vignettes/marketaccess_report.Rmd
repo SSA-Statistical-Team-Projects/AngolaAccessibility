@@ -7,17 +7,24 @@ always_allow_html: true
 bibliography: bibliography.bib
 ---
 
+
 ```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "man/figures/README-",
+  out.width = "100%"
+)
+devtools::load_all()
 
-knitr::opts_chunk$set(echo = TRUE)
+# BiocManager::install("kable", update = FALSE, validate = FALSE)
 
-pacman::p_load(here, ggplot2, sf, sfnetworks, 
-               kableExtra, dplyr, data.table, 
-               flextable)
+pacman::p_load(here, ggplot2, sf, sfnetworks, kableExtra, dplyr, data.table, 
+               viridis, paletteer, ggthemes, gridExtra, grid, flextable)
 
 sf::sf_use_s2(FALSE)
 
-load(here("data-raw/angola_access_projenvir.RData"))
+load(here("data-raw/angola_access_projenvir2.RData"))
 
 ```
 
@@ -39,60 +46,64 @@ In measuring the expected length of time it takes each village community to arri
 
 (1) We obtain and clean the community geolocated data to ensure each location is within the country and remove all incorrectly geocoded communities.
 
-The locations of the 23088 geolocated communities spread across the country as follow:
+The locations of the 23088 geolocated communities spread across the country as follows:
 
-```{r, echo=FALSE, message=FALSE}
+```{r, echo=FALSE}
 
 ### read in the raster
-agoshp_dt <- sf::st_read(dsn = here("data-raw/settlements"),
-                         layer = "Angola_Settlement_Extents_Version_02",
+# agoshp_dt <- sf::st_read(dsn = here("data-raw/settlements"),
+#                          layer = "Angola_Settlement_Extents_Version_02")
+# 
+# community_dt <- st_join(community_dt, agoshp_dt[, c("dou_level1")])
+# 
+# community_dt <- 
+#   community_dt %>%
+#   mutate(sector = ifelse(dou_level1 %in% 
+#                            c("Urban Center", "Urban Cluster"), 
+#                          "Urban", 
+#                          "Rural"))
+
+agoshp_dt <- sf::st_read(dsn = "data-raw/boundary",
+                         layer = "ago_admbnda_adm3_gadm_ine_ocha_20180904",
                          quiet = TRUE)
 
-community_dt <- st_join(community_dt, agoshp_dt[, c("dou_level1")])
-
-community_dt <- 
-  community_dt %>%
-  mutate(sector = ifelse(dou_level1 %in% 
-                           c("Urban Center", "Urban Cluster"), 
-                         "Urban", 
-                         "Rural"))
-
 ggplot() + 
-  geom_sf(data = angshp_dt) + 
-  geom_sf(data = community_dt) + 
+  geom_sf(data = agoshp_dt) + 
+  geom_sf(data = community_dt, size = 1, alpha = 0.5) + 
   theme_minimal()
 
 ```
 
+
 (2) We create a query box within which the locations of all markets, ATMs and Banks as well as the road network map will be return from the Open Street Map server. The query box is based on the geospatial extent of the country i.e. the maximum and minimum coordinate values intersecting the country in a square shape. Angola shares a border with Zambia to the East, Namibia to the South and the Democratic Republic of Congo (DRC) to the North. Like many other countries, individuals and families living close to the border in Angola are able to skip across to satisfy their needs without recourse to any disallowing border policies. Consequently, we add an additional 50km (upon expert advice) to the border to query box previous described to account for access to services in the neighboring countries.
 
-We apply an OSM database GET query to extract locations of all markets, ATMs and Banks within Angola based on the aforementioned query paremeters. There are 1156 geolocations returned from the GET request.
+We apply an OSM database GET query to extract locations of all markets, ATMs and Banks within Angola based on the aforementioned query paremeters. One disadvantage of the OSM data is that it is often incomplete. To control for this, proxy OSM's missing markets by including the center of activity within each district to the data. We identify these centers of activity using the WorldPop building footprint data [@wpopbuilding] to find the 100 square meter tile in each district with the highest building count. The result of the OSM database GET query and the centers of activity within each district amount to 1771 potential destinations. 
 
 ```{r, echo = FALSE}
 
 ggplot() + 
-  geom_sf(data = angshp_dt) + 
-  geom_sf(data = community_dt, color = "blue") + 
-  geom_sf(data = markfin_dt, color = "red") +
+  geom_sf(data = agoshp_dt) + 
+  geom_sf(data = community_dt, color = "blue", size = 1, alpha = 0.5) + 
+  geom_sf(data = marketplace_dt, color = "red", size = 1, alpha = 0.5) +
   theme_minimal() 
 
 ```
+Note: The map shows community locations (in blue) and markets, financial services &
+district centers (in red)
 
-Note: The map shows community locations (in blue) and markets-financial services (in red)
+(3) Likewise, we use the same query system to extract the road network system data within the country. We filter for the lines or multi-lines data with the following classifications: "motorway", "primary", "secondary", "tertiary", "unclassified", "residential", "trunk", "road",  "motorway_link","trunk_link", "primary_link", "secondary_link", "tertiary_link". We apply a cleaning process to the road network lines data performing the following operations: 
 
-(3) Likewise, we use the same query system to extract the road network system data within the country. We filter for the lines or multi-lines data with the following classifications: "motorway", "primary", "secondary", "tertiary", "unclassified", "residential", "trunk", "road", "motorway_link","trunk_link", "primary_link", "secondary_link", "tertiary_link". We apply a cleaning process to the road network lines data performing the following operations:
-
--   Due to a large number of missing speed limits within the road segment data, we create a speed dictionary assigning an expected speed to each type of road. We apply adjustments for the surface quality of each road.
+- Due to a large number of missing speed limits within the road segment data, we create a speed dictionary assigning an expected speed to each type of road. We apply adjustments for the surface quality of each road. 
 
 $$v_{rtq} = E(v_t)*\lambda_s$$
 
-where $E(v_t)$ represents the speed for each road type and $\lambda_s$ is the adjustment factor for the surface types i.e. surfaces that are rougher and make roads less suited for traffic should reduce $v$ for a road $r$. We can now compute travel times for each road segment, $r$, as follows:
+where \( E(v_t) \) represents the speed for each road type and \( \lambda_s \) is the adjustment factor for the surface types i.e. surfaces that are rougher and make roads less suited for traffic should reduce \( v\) for a road \( r\). We can now compute travel times for each road segment, \( r\), as follows: 
 
 $$\pi_{r} = \frac{D_{r}} {v_{rtq}}$$
 
-i.e. The length of a road (distance) $D_{r}$ is a product of travel time $pi_{r}$ and the expected speed of travel $v_{rtq}$.
+i.e.  The length of a road (distance) \(D_{r}\) is a product of travel time \( pi_{r}\) and the expected speed of travel \( v_{rtq}\).
 
--   We make structural adjustments to the road geometries obtained from OSM to create a more realistic picture. These changes include deleting redundant edges and loops, assuming all roads to be bi-directional and we snap edges i.e. any two road edges ends within 30m of each other are snapped into one road. This is because OSM roads are often inputted manually and two roads that form a junction might not be properly mapped living a space between two edges. Leaving this unconnected, creates origins and destinations that seem unconnected or increase the expected distance/time to destination. We used the accessibility [@access] and tidyR [@tidyr] R packages to make these changes.
+ We make structural adjustments to the road geometries obtained from OSM to create a more realistic picture. These changes include deleting redundant edges and loops, assuming all roads to be bi-directional and we snap edges i.e. any two road edges ends within 30m of each other are snapped into one road. This is because OSM roads are often inputted manually and two roads that form a junction might not be properly mapped living a space between two edges. Leaving this unconnected, creates origins and destinations that seem unconnected or increase the expected distance/time to destination. We used the accessibility [@access] and tidyR [@tidyr] R packages to make these changes.
 
 ```{r, echo = FALSE}
 
@@ -103,79 +114,134 @@ ggplot() +
   labs(title = "Angola's Road Network System",
        color = "Highway Type")
 
+
+num_villages <- nrow(community_dt)
+
+over_hrvillages <- length(dt2$cost[dt2$cost > 1])
+
+over_hrrate <- round((100*over_hrvillages / num_villages), 2)
+
+median_cost <- round(summary(dt2$cost[!is.infinite(dt2$cost)])[[3]] * 60, 1)
+mean_cost <- round(summary(dt2$cost[!is.infinite(dt2$cost)])[[4]] * 60, 1)
+
+
 ```
 
-(4) Next, we blend origins (community locations), road network and destinations (markets and financial services). This allows us to create origin-destination cost matrices i.e. estimate the travel times from each community location to all destinations. Select, the minimum travel time for each community location as the expected travel time for each community to their nearest destination.
+
+
+(4) Next, we blend origins (community locations), road network and destinations (markets and financial services). This allows us to create origin-destination cost matrices i.e. estimate the travel times from each community location to all destinations. Select, the minimum travel time for each community location as the expected travel time for each community to their nearest destination. 
+
+
+
 
 ### Estimation Results
+Below is a map of the spatial distribution of access to markets and financial services within the country. The median travel time to nearest market/financial centers is about `r median_cost` mins with an average of `r mean_cost`. Of the `r num_villages` villages, `r over_hrvillages` villages (`r over_hrrate`%) take over 1 hour to reach markets, financial services and the district economic hubs.   
 
-Below is a map of the spatial distribution of access to markets and financial services within the country.
 
 ```{r, echo = FALSE}
 
-accessplot
+quantiles <- quantile(dt2$cost, probs = seq(0, 1, 0.1), na.rm = TRUE)
+
+dt2 %>%
+  filter(!is.infinite(cost)) %>%
+  mutate(cost_group = cut(cost, 
+                          breaks = c(-Inf, 10/60, 20/60, 30/60, 40/60, 
+                                     50/60, 1, Inf),
+                          labels = c("0-10 min", "10-20 min", "20-30 min", 
+                                     "30-40 min", "40-50 min", "50-60 min", 
+                                     "60+ min"))) %>%
+  ggplot() +
+  geom_sf(data = agoshp_dt, fill = "white") +
+  geom_sf(aes(color = cost_group)) +
+  scale_color_viridis_d(name = "Travel Time",
+                        option = "plasma", 
+                        na.value = "gray95") + 
+  ggtitle("Access to Markets, Financial Services and District Hubs in Angola") + 
+  theme_bw()
+
 
 ```
 
-This analysis contains two major flaws. Firstly, our travel times assume that all households have an equal means of transport. While flawed, this has the advantage of allowing us to focus on how long it would take a household to arrive at its nearest market or financial service of interest while keeping all other factors constant. Finally (and perhaps more importantly), the open street maps database can be incomplete in remote areas.
 
-```{r, echo = FALSE}
+This analysis contains two major flaws. Firstly, our travel times assume that all households have an equal means of transport. While flawed, this has the advantage of allowing us to focus on how long it would take a household to arrive at its nearest market or financial service of interest while keeping all other factors constant. Finally (and perhaps more importantly), the open street maps database can be incomplete in remote areas. We have attempted to compensate for this by supplementing the data with district centers 
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
 
 ### read in the village market access results and lets merge rural urban
-access_dt <- readRDS(here("data-clean/marketplace/village_market_access.RDS"))
+# access_dt <- readRDS(here("data-clean/marketplace/village_market_access.RDS"))
 
-access_dt <- merge(access_dt, 
-                   community_dt %>%
-                     st_drop_geometry() %>%
-                     select(interview__id, sector))
+# access_dt <- merge(dt2, 
+#                    community_dt %>%
+#                      st_drop_geometry() %>%
+#                      select(interview__id, sector))
+# 
+# 
+# access_dt %>%
+#   ggplot(aes(x = cost)) + 
+#   geom_histogram(position = "identity", alpha = 0.7, bins = 50) + 
+#   facet_wrap(~sector, scales = "free") + 
+#   labs(title = "Distribution of Travel Time by Sector",
+#        x = "Log Travel Times (hour)",
+#        y = "Frequency",
+#        fill = "Sector") 
 
+plot1 <- 
+dt2 %>%
+  ggplot() + 
+  stat_ecdf(aes(x = cost), geom = "step", pad = FALSE, na.rm = TRUE) + 
+  labs(x = "Travel Times (hours)",
+       y = "Frequency") + 
+  theme_bw()
 
-access_dt %>%
-  ggplot(aes(x = cost, fill = sector)) + 
-  geom_histogram(position = "identity", alpha = 0.7, bins = 50) + 
-  facet_wrap(~sector, scales = "free") + 
-  labs(title = "Distribution of Travel Time by Sector",
-       x = "Log Travel Times (hour)",
-       y = "Frequency",
-       fill = "Sector") 
+plot2 <- 
+dt2 %>%
+  ggplot(aes(x = log(cost))) + 
+  geom_histogram(position = "identity", alpha = 0.7, bins = 150) + 
+  labs(x = "Log Travel Times",
+       y = "Frequency") + 
+  theme_bw()
+
+grid.arrange(grobs = list(plot1, plot2), 
+             nrow = 1,
+             top = textGrob("Distribution of Travel Times"))
 
 
 ```
+
 
 ### Appendix
 
 #### Speed Dictionary
 
-```{r, echo = FALSE, results='asis'}
+```{r, echo = FALSE}
 
 ### read in the streets data
 osmstreets_obj <- readRDS(here("data-raw/osm_raw/osmroads_object.RDS"))
 
+speed_dt <- rbind(speed_dt,
+                  data.table(highway = "unknown",
+                             speed = 50))
 speed_dt <- 
-osmstreets_obj$osm_lines %>%
+network_dt %>%
+  st_as_sf(., "edges") %>%
+  mutate(road_length = units::set_units(st_length(.), "km")) %>%
   st_drop_geometry() %>%
-  as.data.table() %>%
-  .[, prop.table(table(highway, useNA = "always"))] %>%
-  as.data.table() %>%
-  .[is.na(highway), highway := "unknown"] %>%
-  mutate(speed = c(90, 60, 70, 50, 50, 70, 60, 80, 55, 90, 55, 45, 40, 50)) %>%
-  setnames(old = "N", new = "percent") %>%
-  .[, percent := round(percent*100, digits = 3)]
-
-
-
-# speed_dt %>%
-#   kbl(col.names = c("Highway Type", "(%) by Type", "Speed (km/hr)")) %>%
-#   kable_styling(full_width = F)
+  group_by(highway) %>%
+  summarise(total_distance = round(sum(road_length, na.rm = TRUE), 1)) %>%
+  merge(speed_dt) %>%
+  mutate(road_share = as.numeric(round((total_distance / sum(total_distance, na.rm = TRUE))*100, 2)))
 
 speed_dt %>%
+  as.data.table() %>%
   flextable() %>%
-  set_header_labels(`Highway Type` = "highway", 
-                    `(%) by Type` = "percent", 
-                    `Speed (km/hr)` = "speed") %>%
+  set_header_labels(highway = "Highway Type",
+                    total_distance = "Road Length",
+                    road_share = "Share (%)", 
+                    speed = "speed") %>%
   autofit()
 
 ```
+
 
 #### Road Surface Adjustments
 
@@ -197,5 +263,8 @@ adjustment_dt %>%
 
 
 ```
+
+
+
 
 References
